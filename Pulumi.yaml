@@ -1,0 +1,6 @@
+name: temporal-durable-workflows-aws
+description: Private Temporal invoice workflows on existing EKS with managed PostgreSQL.
+runtime:
+  name: python
+  options:
+    virtualenv: .venv

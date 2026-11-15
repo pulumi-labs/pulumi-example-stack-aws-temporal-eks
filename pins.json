@@ -1,0 +1,12 @@
+{
+  "chart_version": "1.8.0",
+  "chart_sha256": "e65b454d620129f3d7da2c16611a7f754e2d89b20b7a135dc5f0916a062f3a9e",
+  "rds_ca_sha256": "d46e1bdfda05c8e7644e50930806a19b139a222542bf0348082fb59ece2b5fa5",
+  "images": {
+    "server": "temporalio/server:1.32.2@sha256:7bf69188a6232fea14869b9cef3d94aa82a1601d99517f7e86c71f22da4e0670",
+    "admin_tools": "temporalio/admin-tools:1.32.2@sha256:4a95866efba29d7e17ab012df5232795e8b0ad0f7d5f9d1ec4df321f7792a754",
+    "postgres": "postgres:17.6-bookworm@sha256:f3bd19c606e442c3d7bdfa8002e03fe260a1023351e0ea4598032022b68dd6e3",
+    "python": "python:3.12.12-slim-bookworm@sha256:593bd06efe90efa80dc4eee3948be7c0fde4134606dd40d8dd8dbcade98e669c",
+    "uv": "ghcr.io/astral-sh/uv:0.9.10@sha256:29bd45092ea8902c0bbb7f0a338f0494a382b1f4b18355df5be270ade679ff1d"
+  }
+}

@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+Pulumi.*.yaml
+!Pulumi.yaml
+.pulumi/
+artifacts/
+wheelhouse/
+*.key
+*.log
+.env*
