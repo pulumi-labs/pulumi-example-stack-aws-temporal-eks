@@ -1,108 +1,161 @@
 # Temporal invoice workflows on Amazon EKS with PostgreSQL and Python Pulumi
 
-Deploy a private Temporal server and a separate Python invoice worker on an
-existing Amazon EKS cluster. Python Pulumi connects encrypted RDS PostgreSQL
-history and visibility databases, schema initialization, mTLS credentials and
-the worker. The workflow calculates an invoice, retries a requested transient
-activity failure and exposes the completed result through workflow queries and
-SQL visibility.
+This example runs a private Temporal server and a small Python invoice worker on
+an EKS cluster you already have. The useful result: business logic that keeps
+going when things fail. If a step hits a temporary error, Temporal retries it
+automatically and remembers every step in a database, so a workflow finishes
+correctly across retries. Restart recovery is a separate behavior that has not
+been tested in this example.
 
-**Validation status, November 16, 2026 (UTC):** Native deployment and the
-live invoice proof passed in an approved disposable EKS environment. The result
-was 2598 subtotal, 208 tax and 2806 total cents on activity attempt 2. Persisted
-retry history, the completed workflow query and SQL visibility matched. A
-client with only the trusted CA was rejected with
-`TLSV13_ALERT_CERTIFICATE_REQUIRED`.
+The sample workflow calculates an invoice, survives a deliberately injected
+temporary failure and then exposes the finished result through a workflow query
+and SQL search (visibility).
 
-The corrected image's explicit UID 1000 source ownership passed both non-root
-startup imports and the live workflow. The 10 focused worker tests passed on
-November 15. This remains a private review draft, with no production-readiness,
-HA, restore or capacity claim.
+## Key terms
 
-## What it creates
+- **Temporal**: an open source workflow engine. You write workflows as normal
+  code; Temporal records each step and retries failed steps (activities).
+- **Worker**: your own process that runs workflow and activity code. Here it's a
+  Python container, deployed separately from the Temporal server.
+- **EKS** (Amazon Elastic Kubernetes Service): AWS's managed Kubernetes. You
+  bring an existing cluster; this stack doesn't create one.
+- **RDS** (Amazon Relational Database Service): managed PostgreSQL. It stores
+  Temporal's workflow history and the visibility data used for searches.
+- **mTLS** (mutual TLS): both sides of a connection present certificates. Every
+  client, including the worker and Temporal's own services, must show a
+  certificate from your private CA, or the connection is refused.
+- **Helm**: the Kubernetes package manager. The stack installs the official
+  Temporal Helm chart.
+- **Pulumi**: infrastructure as code. The Python program in this repository
+  creates the database, Kubernetes objects and Helm release in the right order.
 
-* One private RDS PostgreSQL 15.18 `db.t4g.micro`, 20 GiB encrypted gp3 storage,
-  seven-day backups, subnet/parameter/security groups and a node-to-RDS ingress rule.
-* One Kubernetes namespace and dedicated token-free service account, database
-  and mTLS Secrets, reviewed AWS CA and SQL bootstrap ConfigMap/Job.
-* Official Temporal chart 1.8.0 with Server/admin-tools 1.32.2: separate frontend,
-  history, matching and system-worker services. Schema and `billing` namespace
-  creation use the chart's standard hooks. Web UI and persistent admin-tools
-  Deployment are disabled.
-* One independent Python application worker using a digest-pinned image you
-  build from `worker/Dockerfile`. No application AWS identity is created.
+## What the stack creates
 
-All application services are ClusterIP. All clients require a certificate from
-the dedicated trusted CA. Every accepted certificate has administrative trust in
-this dedicated server. The example does not implement multi-tenant namespace
-authorization. Kubernetes access and private networking do not replace mTLS.
+- One private RDS PostgreSQL 15.18 `db.t4g.micro` with 20 GiB of encrypted gp3
+  storage and seven-day backups, plus its subnet, parameter and security groups
+  and a node-to-RDS ingress rule.
+- One Kubernetes namespace with a dedicated token-free service account, database
+  and mTLS Secrets, the reviewed AWS CA and a SQL bootstrap ConfigMap and Job.
+- The official Temporal chart 1.8.0 with Server and admin-tools 1.32.2, running
+  separate frontend, history, matching and system-worker services. The chart's
+  standard hooks create the schema and the `billing` namespace. The Web UI and
+  the long-running admin-tools Deployment are turned off.
+- One Python invoice worker, using a digest-pinned image you build from
+  `worker/Dockerfile`. The worker gets no AWS identity.
 
-## Prerequisites and versions
+Every application service is ClusterIP, so nothing is exposed publicly. All
+clients need a certificate from the dedicated CA, and any accepted certificate
+has full administrative trust in this server. There's no multi-tenant namespace
+authorization. Kubernetes access and private networking don't replace mTLS.
 
-Use an existing EKS cluster in `us-east-2`, a VPC and two private RDS subnets in
-different availability zones, selected worker-node security group, private API
-route/DNS, AMD64 Linux nodes and an operator kubeconfig scoped to the example.
-The node SG must be the actual SG used for pod-to-RDS traffic. Security Groups
-for Pods require the matching source SG instead. Supply the exact private subnet
-CIDRs for network-policy database egress. Verify CNI policy enforcement and
-node-metadata/control-channel isolation in your platform; this stack does not
-modify shared cluster, node, IAM, CNI or routing infrastructure.
+## Validation status
 
-The provisioner needs native RDS/EC2 lifecycle and tagging permissions in the
-selected account, plus namespace/Secret/ConfigMap/Job/Deployment/Service and Helm
-permissions in Kubernetes. Port-forward users need `pods/portforward` access.
-The AWS provider sets `pulumi-project` and `pulumi-stack` tags. `resourcePrefix`
-controls database identifiers and AWS name prefixes so an operator can scope
-trial permissions. No IAM roles or mandatory permissions boundaries are added.
+Tested on November 16, 2026 (UTC) in an approved disposable EKS environment:
 
-Infrastructure: Pulumi CLI/SDK 3.273.0, AWS 7.52.1, Kubernetes 4.34.2, CPython
-3.12 ARM64 Linux glibc provisioner. `requirements.lock` inherits the reviewed
-provider closure and adds hashed Pydantic 2.12.3 configuration parsing.
-Worker: CPython 3.12.12 AMD64 Linux glibc, Temporal SDK 1.18.1, Pydantic 2.12.3,
-AnyIO 4.11.0, with its own complete wheel hash lock. Other architectures require
-a newly reviewed wheel closure; do not bypass hash checking.
+- Native deployment and the live invoice workflow passed. The result was 2598
+  subtotal, 208 tax and 2806 total cents on activity attempt 2.
+- Persisted retry history, the completed workflow query and SQL visibility all
+  matched.
+- A client with only the trusted CA (no client certificate) was rejected with
+  `TLSV13_ALERT_CERTIFICATE_REQUIRED`.
+- The worker image's explicit UID 1000 source ownership passed both non-root
+  startup imports and the live workflow.
 
-Use an approved disposable execution environment. Acquire and scan source,
-chart contents, all transitive wheels, tools/providers and image layers before
-execution. Scan generated runnable output before running it. Do not build,
-install, render, preview or test workloads on the workstation.
+The 10 focused worker tests passed on November 15. Production readiness, HA,
+restore, capacity, rolling recovery and independent scaling have **not** been
+tested.
 
-This private review draft is staged at
-`pulumi-labs/pulumi-example-stack-aws-temporal-eks`. Cloning requires GitHub
-access to the private repository:
+## Prerequisites
+
+### AWS and cluster
+
+- An existing EKS cluster in `us-east-2` with AMD64 Linux nodes.
+- A VPC with two private RDS subnets in different availability zones, and their
+  exact IPv4 CIDRs (used for network-policy database egress).
+- The security group that pod-to-RDS traffic actually comes from. That's
+  usually the worker-node security group; if you use Security Groups for Pods,
+  use the matching pod security group instead.
+- A private route and DNS to the Kubernetes API.
+- An operator kubeconfig scoped to this example.
+
+Check that your CNI enforces network policies and that node metadata and
+control channels are isolated. This stack doesn't change shared cluster, node,
+IAM, CNI or routing infrastructure.
+
+### Permissions
+
+- AWS: RDS and EC2 lifecycle and tagging permissions in the chosen account.
+- Kubernetes: namespace, Secret, ConfigMap, Job, Deployment, Service and Helm
+  permissions. Anyone using port-forward also needs `pods/portforward`.
+
+The AWS provider adds `pulumi-project` and `pulumi-stack` tags. `resourcePrefix`
+sets database identifiers and AWS name prefixes, so you can scope permissions to
+those names. The stack adds no IAM roles and requires no permissions boundary.
+
+### Tools and versions
+
+- Infrastructure runner: CPython 3.12 on ARM64 Linux glibc, Pulumi CLI and SDK
+  3.273.0, AWS provider 7.52.1, Kubernetes provider 4.34.2, plus `uv`, `kubectl`
+  and Docker. `requirements.lock` holds the reviewed provider set plus hashed
+  Pydantic 2.12.3 for configuration parsing.
+- Worker image: CPython 3.12.12 on AMD64 Linux glibc, Temporal SDK 1.18.1,
+  Pydantic 2.12.3 and AnyIO 4.11.0, with its own complete wheel hash lock. Other
+  architectures need a newly reviewed wheel set. Don't bypass hash checking.
+- A private container registry you're authorized to push to, and that your EKS
+  nodes can pull from.
+- An encrypted Pulumi state backend outside the source tree.
+
+### Safe execution environment
+
+Run everything in an approved disposable execution environment. Acquire and scan
+the source, chart contents, all transitive wheels, tools, providers and image
+layers before running them, and scan generated output (like the worker image)
+before its first run. Don't build, install, render, preview or test the workload
+on your workstation.
+
+## Setup
+
+### 1. Get the code
 
 ```sh
 git clone https://github.com/pulumi-labs/pulumi-example-stack-aws-temporal-eks.git
 cd pulumi-example-stack-aws-temporal-eks
 ```
 
-## Acquire exact inputs and build the worker
+### 2. Download and verify the Temporal Helm chart
 
-Download the official `temporal-1.8.0.tgz` release asset into `artifacts/`.
-Verify SHA-256
-`e65b454d620129f3d7da2c16611a7f754e2d89b20b7a135dc5f0916a062f3a9e`.
-The program checks the local archive and bundled RDS CA bytes before creating
-resources. The chart archive is an external acquired artifact, not a missing
-generated source file. Source:
-https://github.com/temporalio/helm-charts/releases/tag/temporal-1.8.0
+Download the official `temporal-1.8.0.tgz` release asset from
+https://github.com/temporalio/helm-charts/releases/tag/temporal-1.8.0 into
+`artifacts/`. Its SHA-256 must be:
 
-Stage only the scanned Linux AMD64 wheels matching `worker/requirements.lock`
-in `wheelhouse/`. The Dockerfile installs entirely from that directory, with
-hash enforcement and no network dependency resolution. Pull the pinned
-Python/uv images in `pins.json`, inspect and scan their complete content first.
-In the approved VM, with an authorized private image registry:
+```text
+e65b454d620129f3d7da2c16611a7f754e2d89b20b7a135dc5f0916a062f3a9e
+```
+
+The chart is something you download, not a missing file. Before it creates any
+resource, the program checks this archive and the bundled RDS CA bytes.
+
+### 3. Build and push the worker image
+
+Put only the scanned Linux AMD64 wheels that match `worker/requirements.lock`
+into `wheelhouse/`. The Dockerfile installs only from that directory, enforces
+hashes and resolves nothing from the network. Pull the pinned Python and uv
+images listed in `pins.json`, then inspect and scan their full contents. In the
+approved VM:
 
 ```sh
 docker build --network=none --platform linux/amd64 -f worker/Dockerfile \
   -t "${WORKER_IMAGE_TAG:?set an authorized private registry tag}" .
 ```
 
-Scan the generated image, then push to that authorized registry. Capture its
-actual immutable `registry/repository@sha256:...` reference. Configure that value
-as `workerImage`; no prebuilt application image or fake digest is supplied.
-Image-push permissions and EKS image-pull permissions remain operator-owned.
+Scan the new image, push it to your registry and note its immutable reference
+in the form `registry/repository@sha256:...`. You'll set it as `workerImage`.
+No prebuilt application image is provided. Image push and EKS image pull
+permissions are yours to manage.
 
-Stage the scanned ARM64 infrastructure wheel closure separately:
+### 4. Install the infrastructure dependencies
+
+Stage the scanned ARM64 infrastructure wheels separately, then install them:
 
 ```sh
 uv venv --python 3.12 .venv
@@ -111,16 +164,15 @@ uv pip install --python .venv/bin/python --no-index \
   -r requirements.lock
 ```
 
-Use a preinstalled reviewed Python interpreter. Do not allow implicit interpreter,
-tool or provider downloads to bypass scanning.
+Use a preinstalled, reviewed Python interpreter. Don't let tools download
+interpreters, tools or providers on their own, because that skips scanning.
 
-## Configure private access and secrets
+### 5. Create a stack and set basic configuration
 
-Use an encrypted state backend outside the source tree. Initialize a stack, then
-set `resourcePrefix` to a unique lowercase DNS/RDS-safe prefix, at most 32
-characters without consecutive/trailing hyphens. It defaults to
-`temporal-<stack>`. For the coordinated trial use stack `ae4-temporal` and prefix
-`ae4-temporal`.
+Choose a unique `resourcePrefix`: lowercase, DNS and RDS safe, at most 32
+characters, with no consecutive or trailing hyphens. If you leave it out, it
+defaults to `temporal-<stack>`. The commands below use stack and prefix
+`ae4-temporal`, matching the validated run; replace them with your own names.
 
 ```sh
 pulumi stack init ae4-temporal
@@ -132,8 +184,8 @@ pulumi config set --secret dbMasterPassword
 pulumi config set --secret dbAppPassword
 ```
 
-`platform.json` is operator-owned JSON with these fields. Replace the coordinate
-variables with actual platform inventory before setting config:
+`platform.json` describes your existing platform. Fill in real values from
+your AWS and cluster inventory:
 
 ```json
 {
@@ -146,21 +198,27 @@ variables with actual platform inventory before setting config:
 }
 ```
 
-The kubeconfig must identify this same account/cluster and contain only its
-scoped guest credential or approved native authentication method. Do not
-transfer a permanent admin credential. Both database passwords must be
-independent 32-128-character random strings from `A-Z`, `a-z`, `0-9`, `_`, `-`.
-Use the interactive secret prompts or standard input, never plaintext CLI
-arguments or source-controlled config.
+The kubeconfig must point at the same account and cluster and hold only a
+scoped credential or an approved native authentication method. Never use a
+permanent admin credential.
 
-Issue certificates outside this repository from a dedicated private CA:
+The two database passwords must be independent random strings, 32 to 128
+characters long, using only `A-Z`, `a-z`, `0-9`, `_` and `-`. Enter them at the
+interactive secret prompt or through standard input, never as plaintext command
+arguments or in committed config.
 
-* Server certificate: SAN `DNS:temporal.internal`, EKUs `serverAuth,clientAuth`.
-  All Temporal server services use this certificate, including internode clients.
-* Separate application/operator client certificate: EKU `clientAuth`.
-* PEM certificates/keys; CA certificate must verify both chains.
+### 6. Provide mTLS certificates
 
-Supply the exact reviewed PEM files through stdin:
+Issue certificates from a dedicated private CA, outside this repository:
+
+- **Server certificate**: SAN `DNS:temporal.internal`, with EKUs
+  `serverAuth,clientAuth`. All Temporal server services use it, including
+  when they connect to each other.
+- **Client certificate**: a separate certificate for the application and
+  operators, with EKU `clientAuth`.
+- Everything in PEM format, and the CA must verify both chains.
+
+Load them through standard input:
 
 ```sh
 pulumi config set --secret tlsCaCertificate < /secure/tls/ca.crt
@@ -170,15 +228,16 @@ pulumi config set --secret tlsClientCertificate < /secure/tls/client.crt
 pulumi config set --secret tlsClientPrivateKey < /secure/tls/client.key
 ```
 
-The stack never generates a CA, stores a CA signing key, exports secret values
-or mounts the RDS master credential into server/application pods. SQL clients
-use the real RDS hostname and verify it against the bundled AWS regional CA.
+The stack never generates a CA, never stores a CA signing key, never exports
+secret values and never mounts the RDS master credential into server or
+application pods. SQL clients connect to the real RDS hostname and verify it
+against the bundled AWS regional CA.
 
-## Preview, deploy and run a useful workflow
+### 7. Preview and deploy
 
-Review cost, scoped identities, sandbox and exact artifact scan evidence first.
-Then inspect the refreshed plan, especially network exposure, schema hooks,
-RDS protection and ownership:
+Before deploying, confirm cost, scoped identities, your sandbox and the scan
+evidence for every artifact. Save the plan and read it, paying attention to
+network exposure, schema hooks, RDS protection and resource ownership:
 
 ```sh
 pulumi preview --refresh --diff --save-plan /secure/temporal-plan.json
@@ -189,11 +248,19 @@ kubectl -n "$namespace" port-forward --address 127.0.0.1 \
   service/temporal-frontend 7233:7233
 ```
 
-From another authorized guest session with the scanned worker environment,
-set `TEMPORAL_ADDRESS=127.0.0.1:7233`, `TEMPORAL_NAMESPACE=billing`, and
-`TEMPORAL_TLS_DIRECTORY=/secure/tls` where the client files are named
-`ca.crt`, `tls.crt`, `tls.key`. The TLS server name remains `temporal.internal`.
-Use a fresh workflow ID and write an invoice request outside the repository:
+Leave the port-forward running.
+
+### 8. Run an invoice workflow
+
+Open another authorized session that has the scanned worker environment, and set:
+
+- `TEMPORAL_ADDRESS=127.0.0.1:7233`
+- `TEMPORAL_NAMESPACE=billing`
+- `TEMPORAL_TLS_DIRECTORY=/secure/tls`, a directory holding the client files
+  named `ca.crt`, `tls.crt` and `tls.key`
+
+The TLS server name stays `temporal.internal`. Write an invoice request outside
+the repository, using a fresh invoice ID each time:
 
 ```json
 {
@@ -204,57 +271,75 @@ Use a fresh workflow ID and write an invoice request outside the repository:
 }
 ```
 
+Submit it:
+
 ```sh
 python -m worker.submit /secure/invoice.json
 ```
 
-Expected result: 2598 subtotal, 208 tax, 2806 total cents, activity attempt 2.
-With `simulate_transient_failure=false` normal calculation succeeds on attempt 1.
-The activity has no external side effects and does not process payments.
-Duplicate workflow IDs are rejected during the server's retention window.
-The application exposes the typed `invoice_result` workflow query. SQL visibility
-supports `WorkflowId = 'invoice-invoice-001' AND ExecutionStatus = 'Completed'`;
-visibility is eventually consistent. Internal acceptance assets in the builder
-tree drive result/query/history/visibility checks and the missing-certificate
-denial; they are deliberately separate from this runtime export.
+### 9. Check the result
 
-## Troubleshooting and limitations
+Success means 2598 subtotal, 208 tax and 2806 total cents, finishing on
+activity attempt 2. The first attempt failed on purpose and Temporal retried it.
+With `simulate_transient_failure` set to `false`, the calculation succeeds on
+attempt 1.
 
-Schema errors: inspect the failed Helm hook Job and actual mounted CA/secret
-references in the approved environment. Both databases must be owned by the
-application login. Do not blindly retry a failed migration or bypass TLS.
-Keep logs private because they may contain operational identifiers.
+You can also read the result in two other ways:
 
-TLS errors: verify CA chains, EKUs, certificate expiration and server SAN.
-Namespace creation uses the server certificate as a client, so it needs both
-EKUs. Missing client certificates must fail even through a working port-forward.
-There is no plaintext frontend or internal frontend bypass.
+- The typed `invoice_result` workflow query.
+- SQL visibility, with
+  `WorkflowId = 'invoice-invoice-001' AND ExecutionStatus = 'Completed'`.
+  Visibility is eventually consistent, so it can lag for a moment.
 
-Networking errors: verify private API access, selected pod/node SG, database
-subnets and enforced CNI policies. NodeLocal DNS users must adapt the DNS policy
-to their verified resolver path before deployment. No speculative proxy,
-Tailscale operator, cluster runner or public exposure is part of the application.
+The activity has no external side effects and doesn't process payments.
+Reusing a workflow ID is rejected while the server still retains the old run.
 
-The `billing` namespace retains closed workflows for three days. The official
-namespace hook does not update retention for an existing namespace; an attended
-native Temporal operator update is required for that future change. Never change
-history shard count after initial database creation. Credential or schema
-updates need a maintenance window; bootstrap input versions replace the Job,
-and credential revisions roll server/worker pods. Rolling recovery, data
-restore, performance and independent scaling are untested.
+A client that connects with only the CA and no client certificate must fail,
+even through a working port-forward.
 
-## Costs and complete cleanup
+## Troubleshooting
 
-RDS instance/storage/backups and retained snapshots incur charges. Existing EKS,
-nodes, NAT and registry storage also cost money. Obtain current `us-east-2`
-pricing for your actual platform before deploying; no fixed cost estimate is
-claimed. Budgets are alerts, not hard caps.
+- **Schema errors**: in the approved environment, inspect the failed Helm hook
+  Job and the CA and Secret references it actually mounted. The application
+  login must own both databases. Don't blindly retry a failed migration or
+  bypass TLS. Keep logs private, because they can contain operational
+  identifiers.
+- **TLS errors**: check CA chains, EKUs, expiry dates and the server SAN.
+  Namespace creation uses the server certificate as a client, so it needs both
+  EKUs. There's no plaintext frontend or internal-frontend bypass.
+- **Networking errors**: check private API access, the selected pod or node
+  security group, the database subnets and CNI policy enforcement. If you use
+  NodeLocal DNS, adapt the DNS policy to your verified resolver path before
+  deploying. A proxy, Tailscale operator, cluster runner or public exposure
+  isn't part of this application.
 
-RDS and Pulumi deletion protection default on. To deliberately remove this
-example, first stop/drain the application worker and confirm data disposition.
-Leave the existing cluster intact. For a final snapshot, set a unique
-`finalSnapshotIdentifier`. To delete a disposable trial without a final snapshot,
-explicitly set `retainFinalSnapshot=false` as well:
+## Limitations and maintenance
+
+- The `billing` namespace keeps closed workflows for three days. The official
+  namespace hook won't change retention on an existing namespace; that needs an
+  attended native Temporal operator update.
+- Never change the history shard count after the database is first created.
+- Credential and schema updates need a maintenance window. Changing bootstrap
+  inputs replaces the Job, and credential changes roll the server and worker pods.
+- Rolling recovery, data restore, performance and independent scaling are untested.
+
+## Costs
+
+The RDS instance, storage, backups and any retained snapshots cost money. So do
+your existing EKS cluster, nodes, NAT and registry storage. Check current
+`us-east-2` pricing for your platform before deploying; no fixed cost estimate
+is given here. AWS Budgets send alerts but don't stop spending.
+
+## Cleanup
+
+RDS deletion protection and Pulumi protection are on by default. To remove the
+example on purpose:
+
+1. Stop the worker and decide what should happen to the data.
+2. Leave the existing cluster alone.
+3. For a final snapshot, set a unique `finalSnapshotIdentifier`. To delete a
+   disposable install without a final snapshot, also set
+   `retainFinalSnapshot=false` explicitly.
 
 ```sh
 kubectl -n "$namespace" scale deployment/invoice-worker --replicas=0
@@ -266,25 +351,31 @@ pulumi up
 pulumi destroy
 ```
 
-The final `pulumi up` clears RDS/Pulumi protection before destroy. Helm uninstall
-removes chart resources; deleting the Kubernetes namespace removes its owned
-Secrets and Jobs. Temporal namespace records/history remain in RDS until its
-deletion or retained final snapshot. Independently inventory owned RDS resources,
-snapshots/backups, security-group rule/group, subnet/parameter groups, namespace,
-Helm resources, temporary registry images and port-forward processes. Resolve
-retained billable objects before removing encrypted state. Never delete the
-preexisting cluster, node group, VPC or operator credentials.
+The `pulumi up` before destroy clears RDS and Pulumi protection. Helm uninstall
+removes the chart resources, and deleting the Kubernetes namespace removes its
+Secrets and Jobs. Temporal namespace records and history stay in RDS until the
+database is deleted, or inside a retained final snapshot.
 
-## Attribution, license and maintenance
+Afterwards, check what's left yourself: RDS resources, snapshots and backups,
+the security group and its rule, subnet and parameter groups, the namespace,
+Helm resources, temporary registry images and any port-forward processes.
+Clear retained billable objects before removing the encrypted state. Never
+delete the existing cluster, node group, VPC or operator credentials.
 
-Temporal Server, official Helm charts and Python SDK are from Temporal
-Technologies under MIT. See `UPSTREAM-NOTICES.md` and `licenses/`.
-AWS distributes the regional RDS trust bundle. Python/PostgreSQL/uv and wheel
-dependencies retain their licenses in their upstream distributions/images.
+## Attribution and license
+
+Temporal Server, the official Helm charts and the Python SDK come from Temporal
+Technologies under the MIT License. See `UPSTREAM-NOTICES.md` and `licenses/`.
+AWS distributes the regional RDS trust bundle. Python, PostgreSQL, uv and the
+wheel dependencies keep their licenses in their upstream distributions and
+images.
+
 This example's authored code is licensed under the [MIT License](LICENSE) and
 is provided as-is, without warranty or a support commitment. Third-party
-components retain their own licenses and notices.
+components keep their own licenses and notices.
 
-Report source issues through this repository's Issues and propose changes through
-pull requests. Do not post credentials, state or private logs; report sensitive
+## Contributing
+
+Report problems through this repository's Issues and propose changes with pull
+requests. Never post credentials, state or private logs. Report sensitive
 security findings privately to the repository administrators.
