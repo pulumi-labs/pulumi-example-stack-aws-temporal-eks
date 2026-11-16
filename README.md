@@ -7,18 +7,17 @@ the worker. The workflow calculates an invoice, retries a requested transient
 activity failure and exposes the completed result through workflow queries and
 SQL visibility.
 
-**Validation status, November 15, 2026:** 10 focused worker tests passed.
-RDS, schema initialization, the billing namespace and the mTLS server deployed
-in an approved disposable EKS environment. A client with only the trusted CA
-was rejected with `TLSV13_ALERT_CERTIFICATE_REQUIRED`.
+**Validation status, November 16, 2026 (UTC):** Native deployment and the
+live invoice proof passed in an approved disposable EKS environment. The result
+was 2598 subtotal, 208 tax and 2806 total cents on activity attempt 2. Persisted
+retry history, the completed workflow query and SQL visibility matched. A
+client with only the trusted CA was rejected with
+`TLSV13_ALERT_CERTIFICATE_REQUIRED`.
 
-The live invoice proof failed because the first image contained root-owned
-Python files unreadable by UID 1000. The Dockerfile now copies only runtime
-Python files with explicit ownership, and the corrected image builds
-successfully. A renewed live retry/result/query/visibility proof remains
-**unrun** because the fixed test window ended. Application resources were
-destroyed and independently confirmed absent. This remains a private review
-draft, with no production-readiness, HA, restore or capacity claim.
+The corrected image's explicit UID 1000 source ownership passed both non-root
+startup imports and the live workflow. The 10 focused worker tests passed on
+November 15. This remains a private review draft, with no production-readiness,
+HA, restore or capacity claim.
 
 ## What it creates
 
