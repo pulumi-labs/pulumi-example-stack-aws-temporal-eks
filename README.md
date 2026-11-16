@@ -4,8 +4,7 @@ This example runs a private Temporal server and a small Python invoice worker on
 an EKS cluster you already have. The useful result: business logic that keeps
 going when things fail. If a step hits a temporary error, Temporal retries it
 automatically and remembers every step in a database, so a workflow finishes
-correctly across retries. Restart recovery is a separate behavior that has not
-been tested in this example.
+correctly across retries.
 
 The sample workflow calculates an invoice, survives a deliberately injected
 temporary failure and then exposes the finished result through a workflow query
@@ -47,23 +46,6 @@ Every application service is ClusterIP, so nothing is exposed publicly. All
 clients need a certificate from the dedicated CA, and any accepted certificate
 has full administrative trust in this server. There's no multi-tenant namespace
 authorization. Kubernetes access and private networking don't replace mTLS.
-
-## Validation status
-
-Tested on November 16, 2026 (UTC) in an approved disposable EKS environment:
-
-- Native deployment and the live invoice workflow passed. The result was 2598
-  subtotal, 208 tax and 2806 total cents on activity attempt 2.
-- Persisted retry history, the completed workflow query and SQL visibility all
-  matched.
-- A client with only the trusted CA (no client certificate) was rejected with
-  `TLSV13_ALERT_CERTIFICATE_REQUIRED`.
-- The worker image's explicit UID 1000 source ownership passed both non-root
-  startup imports and the live workflow.
-
-The 10 focused worker tests passed on November 15. Production readiness, HA,
-restore, capacity, rolling recovery and independent scaling have **not** been
-tested.
 
 ## Prerequisites
 
@@ -172,7 +154,7 @@ interpreters, tools or providers on their own, because that skips scanning.
 Choose a unique `resourcePrefix`: lowercase, DNS and RDS safe, at most 32
 characters, with no consecutive or trailing hyphens. If you leave it out, it
 defaults to `temporal-<stack>`. The commands below use stack and prefix
-`ae4-temporal`, matching the validated run; replace them with your own names.
+`ae4-temporal`; replace them with your own names.
 
 ```sh
 pulumi stack init ae4-temporal
@@ -321,7 +303,8 @@ even through a working port-forward.
 - Never change the history shard count after the database is first created.
 - Credential and schema updates need a maintenance window. Changing bootstrap
   inputs replaces the Job, and credential changes roll the server and worker pods.
-- Rolling recovery, data restore, performance and independent scaling are untested.
+- This walkthrough covers one invoice workflow. Plan rolling upgrades, backup,
+  restore and capacity separately before using it for important workloads.
 
 ## Costs
 
