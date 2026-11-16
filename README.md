@@ -281,12 +281,10 @@ Temporal Server, official Helm charts and Python SDK are from Temporal
 Technologies under MIT. See `UPSTREAM-NOTICES.md` and `licenses/`.
 AWS distributes the regional RDS trust bundle. Python/PostgreSQL/uv and wheel
 dependencies retain their licenses in their upstream distributions/images.
-No license has been selected for the authored example code; private review does
-not grant a public license.
+This example's authored code is licensed under the [MIT License](LICENSE) and
+is provided as-is, without warranty or a support commitment. Third-party
+components retain their own licenses and notices.
 
-Intended maintenance owner: `pulumi-labs`, pending owner confirmation before
-public release. Authorized reviewers can report source issues through the private
-repository's Issues and propose changes through pull requests. Do not post
-credentials, state or private logs. A private security reporting contact remains
-to be confirmed before public release; do not put sensitive reports in Issues.
-This draft creates no external support commitment.
+Report source issues through this repository's Issues and propose changes through
+pull requests. Do not post credentials, state or private logs; report sensitive
+security findings privately to the repository administrators.
